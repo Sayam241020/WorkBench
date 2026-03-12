@@ -1,4 +1,4 @@
-from src.tools import calendar, email, analytics, project_management, customer_relationship_manager, company_directory
+from src.tools import calendar, email, analytics, project_management, customer_relationship_manager, company_directory, slack
 
 tools_with_side_effects = [
     calendar.create_event,
@@ -15,6 +15,7 @@ tools_with_side_effects = [
     customer_relationship_manager.update_customer,
     customer_relationship_manager.add_customer,
     customer_relationship_manager.delete_customer,
+    slack.send_message,
 ]
 
 tools_without_side_effects = [
@@ -31,6 +32,8 @@ tools_without_side_effects = [
     project_management.search_tasks,
     customer_relationship_manager.search_customers,
     company_directory.find_email_address,
+    slack.read_last_message,
+    slack.search_messages,
 ]
 
 all_tools = tools_with_side_effects + tools_without_side_effects
@@ -52,3 +55,4 @@ customer_relationship_manager_toolkit = [
     t["tool"] for t in tool_information if t["name"].split(".")[0] == "customer_relationship_manager"
 ]
 company_directory_toolkit = [t["tool"] for t in tool_information if t["name"].split(".")[0] == "company_directory"]
+slack_toolkit = [t["tool"] for t in tool_information if t["name"].split(".")[0] == "slack"]
