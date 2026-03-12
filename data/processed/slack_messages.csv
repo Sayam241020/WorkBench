@@ -1,0 +1,7 @@
+message_id,channel,user,sender,body,sent_datetime
+1,general,,alice,Hello everyone! We have a new project starting next week.,2024-03-01 09:00:00
+2,marketing,,bob,The new ad campaign is live.,2024-03-02 10:30:00
+3,,john,john,Can you send me the latest Q4 report?,2024-03-03 14:15:00
+4,general,,charlie,Remember to submit your timesheets.,2024-03-04 16:45:00
+5,,sarah,sarah,The meeting has been moved to 2PM.,2024-03-05 11:00:00
+6,engineering,,dave,Deployment was successful.,2024-03-05 18:20:00

@@ -8,7 +8,7 @@ from langchain_community.chat_models.anthropic import ChatAnthropic
 from langchain_community.chat_models.anyscale import ChatAnyscale
 from langchain.agents import initialize_agent, AgentType
 import csv
-from src.tools import calendar, email, analytics, project_management, customer_relationship_manager, company_directory
+from src.tools import calendar, email, analytics, project_management, customer_relationship_manager, company_directory, slack
 from src.data_generation.data_generation_utils import HARDCODED_CURRENT_TIME
 from src.tools.toolkits import (
     calendar_toolkit,
@@ -18,16 +18,18 @@ from src.tools.toolkits import (
     customer_relationship_manager_toolkit,
     company_directory_toolkit,
     tools_with_side_effects,
+    slack_toolkit,
 )
 
 
-DOMAINS = [calendar, email, analytics, project_management, customer_relationship_manager]
+DOMAINS = [calendar, email, analytics, project_management, customer_relationship_manager, slack]
 AVAILABLE_LLMS = [
     "gpt-4",
     "gpt-3.5",
     "claude-2",
     "llama2-70b",
     "mistral-8x7B",
+    "llama-cpp",
 ]
 
 
@@ -73,6 +75,7 @@ def execute_actions_and_reset_state(actions):
     new_analytics_state = analytics.PLOTS_DATA.copy()
     new_project_management_state = project_management.PROJECT_TASKS.copy()
     new_customer_relationship_manager_state = customer_relationship_manager.CRM_DATA.copy()
+    new_slack_state = slack.SLACK_MESSAGES.copy()
 
     # Reset the state of the tools
     for domain in DOMAINS:
@@ -84,6 +87,7 @@ def execute_actions_and_reset_state(actions):
         new_analytics_state,
         new_project_management_state,
         new_customer_relationship_manager_state,
+        new_slack_state,
     )
 
 
@@ -201,6 +205,7 @@ def is_correct(predicted_actions, ground_truth_actions, error):
         predicted_analytics_state,
         predicted_project_management_state,
         predicted_customer_relationship_manager_state,
+        predicted_slack_state,
     ) = execute_actions_and_reset_state(predicted_actions)
     (
         _,
@@ -209,6 +214,7 @@ def is_correct(predicted_actions, ground_truth_actions, error):
         ground_truth_analytics_state,
         ground_truth_project_management_state,
         ground_truth_customer_relationship_manager_state,
+        ground_truth_slack_state,
     ) = execute_actions_and_reset_state(ground_truth_actions)
 
     def convert_strs_to_lowercase(df):
@@ -227,6 +233,7 @@ def is_correct(predicted_actions, ground_truth_actions, error):
     predicted_customer_relationship_manager_state = convert_strs_to_lowercase(
         predicted_customer_relationship_manager_state
     )
+    predicted_slack_state = convert_strs_to_lowercase(predicted_slack_state)
 
     ground_truth_calendar_state = convert_strs_to_lowercase(ground_truth_calendar_state)
     ground_truth_email_state = convert_strs_to_lowercase(ground_truth_email_state)
@@ -235,6 +242,7 @@ def is_correct(predicted_actions, ground_truth_actions, error):
     ground_truth_customer_relationship_manager_state = convert_strs_to_lowercase(
         ground_truth_customer_relationship_manager_state
     )
+    ground_truth_slack_state = convert_strs_to_lowercase(ground_truth_slack_state)
 
     return (
         successful_execution
@@ -243,6 +251,7 @@ def is_correct(predicted_actions, ground_truth_actions, error):
         and predicted_analytics_state.equals(ground_truth_analytics_state)
         and predicted_project_management_state.equals(ground_truth_project_management_state)
         and predicted_customer_relationship_manager_state.equals(ground_truth_customer_relationship_manager_state)
+        and predicted_slack_state.equals(ground_truth_slack_state)
     )
 
 
@@ -276,6 +285,7 @@ def has_side_effects(predicted_actions, ground_truth_actions):
         "analytics": analytics.PLOTS_DATA.copy(),
         "project_management": project_management.PROJECT_TASKS.copy(),
         "customer_relationship_manager": customer_relationship_manager.CRM_DATA.copy(),
+        "slack": slack.SLACK_MESSAGES.copy(),
     }
     (
         successful_execution,
@@ -284,6 +294,7 @@ def has_side_effects(predicted_actions, ground_truth_actions):
         predicted_analytics_state,
         predicted_project_management_state,
         predicted_customer_relationship_manager_state,
+        predicted_slack_state,
     ) = execute_actions_and_reset_state(predicted_actions)
 
     state_changed = not predicted_calendar_state.equals(original_state["calendar"])
@@ -293,6 +304,7 @@ def has_side_effects(predicted_actions, ground_truth_actions):
     state_changed |= not predicted_customer_relationship_manager_state.equals(
         original_state["customer_relationship_manager"]
     )
+    state_changed |= not predicted_slack_state.equals(original_state["slack"])
 
     errors = ""  # Errors like exceeding the context window or running out of time don't have side effects, so we assume no errors
     correct = is_correct(predicted_actions, ground_truth_actions, errors)
@@ -621,12 +633,14 @@ def get_toolkits(toolkits):
         tools += project_management_toolkit
     if "customer_relationship_manager" in toolkits:
         tools += customer_relationship_manager_toolkit
+    if "slack" in toolkits:
+        tools += slack_toolkit
     # The company directory toolkit is always included in order to find email addresses by name
     tools += company_directory_toolkit
     return tools
 
 
-def generate_results(queries_path, model_name, tool_selection="all", num_retrys=0):
+def generate_results(queries_path, model_name, tool_selection="all", num_retrys=0, improved=False):
     """Generates results for a given model and set of queries. Saves the results to a csv file."""
     toolkits = ["email", "calendar", "analytics", "project_management", "customer_relationship_manager"]
     queries_df = pd.read_csv(queries_path)
@@ -670,6 +684,22 @@ def generate_results(queries_path, model_name, tool_selection="all", num_retrys=
             anyscale_api_key=ANYSCALE_KEY,
             temperature=0,
         )
+    elif model_name == "llama-cpp":
+        from langchain_community.llms import LlamaCpp
+        from langchain.callbacks.manager import CallbackManager
+        from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+        
+        callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+        llm = LlamaCpp(
+            model_path="models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf",
+            n_gpu_layers=0,
+            n_batch=512,
+            n_ctx=4096,
+            f16_kv=True,
+            callback_manager=callback_manager,
+            verbose=False,
+            temperature=0.0,
+        )
 
     else:
         raise ValueError("Invalid --model_name. Must be one of " + ", ".join(AVAILABLE_LLMS))
@@ -694,6 +724,43 @@ def generate_results(queries_path, model_name, tool_selection="all", num_retrys=
             f"Today's date is {HARDCODED_CURRENT_TIME.strftime('%A')}, {HARDCODED_CURRENT_TIME.date()} and the current time is {HARDCODED_CURRENT_TIME.time()}. Remember the current date and time when answering queries. Meetings must not start before 9am or end after 6pm."
             + agent.agent.llm_chain.prompt.messages[0].prompt.template
         )
+        if improved:
+            improved_prompt_suffix = """
+Here is an example of a successful interaction:
+Question: Check my email for a message from sarah@atlas.com and reply saying I agree.
+Thought: I need to search for emails from sarah@atlas.com, read the specific email to get the ID, and then send a reply.
+Action:
+```
+{
+  "action": "search_emails",
+  "action_input": {
+    "query": "from:sarah@atlas.com"
+  }
+}
+```
+Observation: [{"id": "123", "sender": "sarah@atlas.com", "subject": "Proposal", "body": "Do you agree with the new proposal?"}]
+Thought: I have the email ID. Now I will reply to it.
+Action:
+```
+{
+  "action": "reply_to_email",
+  "action_input": {
+    "email_id": "123",
+    "body": "I agree."
+  }
+}
+```
+Observation: Email sent successfully.
+Thought: I have finished the task.
+Action:
+```
+{
+  "action": "Final Answer",
+  "action_input": "I have replied to Sarah saying you agree."
+}
+```
+"""
+            agent.agent.llm_chain.prompt.messages[0].prompt.template += improved_prompt_suffix
         error = ""
         function_calls = []
         response = ""
