@@ -38,10 +38,16 @@ parser.add_argument(
     "--tool_selection", type=str, help="tool selection method. Must be one of 'all', 'domains'", default="all"
 )
 
+parser.add_argument(
+    "--improved",
+    action="store_true",
+    help="whether to use the improved agent (with few-shot prompting)",
+)
+
 args = parser.parse_args()
 
 if __name__ == "__main__":
     ground_truth = pd.read_csv(args.queries_path)
     ground_truth["answer"] = ground_truth["answer"].apply(ast.literal_eval)
-    results = generate_results(args.queries_path, args.model_name, args.tool_selection)
+    results = generate_results(args.queries_path, args.model_name, args.tool_selection, improved=args.improved)
     calculate_metrics(ground_truth, results)
